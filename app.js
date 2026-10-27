@@ -5,11 +5,7 @@ var latest={};
 var history=[];
 var currency=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2});
 var number=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
-var holdings={BTCUSDT:0,ETHUSDT:0,SOLUSDT:0};
-var cash=10000;
 var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null;
-var FEE=0.001;
-try{var saved=JSON.parse(localStorage.getItem('iaCryptoPaperV1')||'null');if(saved&&Number.isFinite(saved.cash)&&saved.holdings){cash=saved.cash;symbols.forEach(function(s){if(Number.isFinite(saved.holdings[s]))holdings[s]=saved.holdings[s]})}}catch(e){console.warn('No se pudo restaurar la cartera virtual',e)}
 var socket=null, reconnectDelay=2000, pollTimer=null, reconnectTimer=null;
 var FEE=0.001;
 try{var saved=JSON.parse(localStorage.getItem('iaCryptoPaperV1')||'null');if(saved&&Number.isFinite(saved.cash)&&saved.holdings){cash=saved.cash;symbols.forEach(function(s){if(Number.isFinite(saved.holdings[s]))holdings[s]=saved.holdings[s]})}}catch(e){console.warn('No se pudo restaurar la cartera virtual',e)}
@@ -36,9 +32,10 @@ history=rows.map(function(x){return {time:x[0],close:Number(x[4])}}).filter(func
 var closes=history.map(function(x){return x.close});var last=closes[closes.length-1];var first=closes[0];var avg=mean(closes.slice(-20));var rv=rsi(closes);var change=((last-first)/first)*100;
 $('mPrice').textContent=fmt(latest[symbol]?latest[symbol].lastPrice:last);$('mRsi').textContent=rv===null?'—':rv.toFixed(1);$('mSma').textContent=fmt(avg);$('mChange').textContent=(change>=0?'+':'')+change.toFixed(2)+'%';
 var state='NEUTRAL',desc='Los indicadores no muestran una combinación clara.';
-if(rv!==null&&rv<35&&last>avg){state='POSITIVA';desc='RSI bajo y precio sobre SMA: dos datos que conviene estudiar juntos.'}
-else if(rv!==null&&rv>65&&last<avg){state='NEGATIVA';desc='RSI alto y precio bajo SMA: observa el contexto y la volatilidad.'}
-$('signal').textContent=state;$('signal').className='signal '+(state==='POSITIVA'?'positive':state==='NEGATIVA'?'negative':'neutral');$('signalText').textContent=desc+' No es una predicción.';
+if(rv!==null&&rv<30){state='RSI BAJO';desc='El RSI está por debajo de 30 en el periodo seleccionado.'}
+else if(rv!==null&&rv>70){state='RSI ALTO';desc='El RSI está por encima de 70 en el periodo seleccionado.'}
+var relation=last>=avg?'El último cierre está por encima de la SMA 20.':'El último cierre está por debajo de la SMA 20.';
+$('signal').textContent=state;$('signal').className='signal neutral';$('signalText').textContent=desc+' '+relation+' Es una descripción histórica, no una predicción.';
 drawChart();
 }).catch(function(e){$('signal').textContent='SIN DATOS';$('signal').className='signal neutral';$('signalText').textContent='No se pudo consultar el historial. Comprueba la conexión e inténtalo después.';console.error(e)}).finally(function(){$('refresh').disabled=false})
 }
@@ -65,42 +62,27 @@ latest[symbol].priceChangePercent=data.P||data.priceChangePercent||latest[symbol
 latest[symbol].highPrice=data.h||data.highPrice||latest[symbol].highPrice;
 latest[symbol].lowPrice=data.l||data.lowPrice||latest[symbol].lowPrice;
 }
-function persistPaper(){try{localStorage.setItem('iaCryptoPaperV1',JSON.stringify({cash:cash,holdings:holdings}))}catch(e){console.warn('No se pudo guardar la cartera virtual',e)}}
 function connectStream(){
 if(socket&&socket.readyState===WebSocket.OPEN)return;
 try{
 socket=new WebSocket('wss://data-stream.binance.vision:443/stream?streams=btcusdt@ticker/ethusdt@ticker/solusdt@ticker');
 socket.onopen=function(){reconnectDelay=2000;setConnection('EN VIVO',true);if(pollTimer){clearInterval(pollTimer);pollTimer=null}};
-socket.onmessage=function(event){try{var packet=JSON.parse(event.data),d=packet.data,s=d.s;if(symbols.indexOf(s)<0)return;applyTicker(s,d);renderCoins();updatePaper();$('updated').textContent='Último tick: '+new Date().toLocaleTimeString('es-MX')}catch(e){console.warn('Mensaje de mercado no válido',e)}};
+socket.onmessage=function(event){try{var packet=JSON.parse(event.data),d=packet.data,s=d.s;if(symbols.indexOf(s)<0)return;applyTicker(s,d);renderCoins();$('updated').textContent='Último tick: '+new Date().toLocaleTimeString('es-MX')}catch(e){console.warn('Mensaje de mercado no válido',e)}};
 socket.onerror=function(){setConnection('RECONECTANDO',false)};
 socket.onclose=function(){setConnection('MODO ALTERNATIVO',false);startPolling();if(!reconnectTimer){reconnectTimer=setTimeout(function(){reconnectTimer=null;reconnectDelay=Math.min(reconnectDelay*2,30000);connectStream()},reconnectDelay)}};
 }catch(e){setConnection('MODO ALTERNATIVO',false);startPolling()}
 }
 function startPolling(){
 if(pollTimer)return;
-pollTimer=setInterval(function(){api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){applyTicker(x.symbol,x)});renderCoins();updatePaper();$('updated').textContent='Consulta periódica: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){setConnection('SIN CONEXIÓN',false);$('updated').textContent='No se pudo actualizar el mercado';console.error(e)})},30000)
+pollTimer=setInterval(function(){api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){applyTicker(x.symbol,x)});renderCoins();$('updated').textContent='Consulta periódica: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){setConnection('SIN CONEXIÓN',false);$('updated').textContent='No se pudo actualizar el mercado';console.error(e)})},30000)
 }
 function refreshAll(){
 setConnection('CARGANDO',false);
 return Promise.all([
 api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){applyTicker(x.symbol,x)});renderCoins();$('updated').textContent='Datos consultados: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){$('updated').textContent='No se pudo cargar el mercado';setConnection('SIN CONEXIÓN',false);console.error(e)}),
 loadHistory()
-]).then(function(){updatePaper();connectStream()})
+]).then(function(){connectStream()})
 }
-function updatePaper(){
-var value=cash,lines=[];
-symbols.forEach(function(s){var p=latest[s]?Number(latest[s].lastPrice):0,q=holdings[s];value+=q*p;if(q>0)lines.push(s.replace('USDT','')+': '+number.format(q)+' · valor '+fmt(q*p))});
-$('cash').textContent=fmt(cash);$('equity').textContent=fmt(value);
-var pos=$('positions');if(pos)pos.textContent=lines.length?'Posiciones: '+lines.join(' | '):'Sin posiciones virtuales abiertas.';
-persistPaper()
-}
-function trade(side){
-var symbol=$('paperAsset').value,amount=Number($('paperAmount').value),price=latest[symbol]?Number(latest[symbol].lastPrice):0;
-if(!price||!Number.isFinite(amount)||amount<=0||amount>1000){$('paperMessage').textContent='Introduce una cantidad válida entre 1 y 1,000 USD virtuales y espera a que cargue el precio.';return}
-if(side==='buy'){if(amount>cash){$('paperMessage').textContent='Saldo virtual insuficiente.';return}var buyQty=(amount*(1-FEE))/price;cash-=amount;holdings[symbol]+=buyQty;$('paperMessage').textContent='Compra virtual: '+number.format(buyQty)+' '+symbol.replace('USDT','')+'. Comisión simulada incluida: 0.10%.'}
-else{var qty=amount/price;if(qty>holdings[symbol]){$('paperMessage').textContent='No tienes suficientes unidades virtuales para vender ese importe.';return}holdings[symbol]-=qty;cash+=amount*(1-FEE);$('paperMessage').textContent='Venta virtual: '+number.format(qty)+' '+symbol.replace('USDT','')+'. Comisión simulada: 0.10%.'}
-updatePaper()
-}
-$('refresh').addEventListener('click',refreshAll);$('asset').addEventListener('change',loadHistory);$('interval').addEventListener('change',loadHistory);$('paperBuy').addEventListener('click',function(){trade('buy')});$('paperSell').addEventListener('click',function(){trade('sell')});
+$('refresh').addEventListener('click',refreshAll);$('asset').addEventListener('change',loadHistory);$('interval').addEventListener('change',loadHistory);
 window.addEventListener('resize',drawChart);window.addEventListener('online',function(){refreshAll()});refreshAll();
 })();
