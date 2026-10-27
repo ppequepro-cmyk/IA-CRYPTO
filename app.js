@@ -7,6 +7,9 @@ var currency=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maxi
 var number=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
 var holdings={BTCUSDT:0,ETHUSDT:0,SOLUSDT:0};
 var cash=10000;
+var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null;
+var FEE=0.001;
+try{var saved=JSON.parse(localStorage.getItem('iaCryptoPaperV1')||'null');if(saved&&Number.isFinite(saved.cash)&&saved.holdings){cash=saved.cash;symbols.forEach(function(s){if(Number.isFinite(saved.holdings[s]))holdings[s]=saved.holdings[s]})}}catch(e){console.warn('No se pudo restaurar la cartera virtual',e)}
 var socket=null, reconnectDelay=2000, pollTimer=null, reconnectTimer=null;
 var FEE=0.001;
 try{var saved=JSON.parse(localStorage.getItem('iaCryptoPaperV1')||'null');if(saved&&Number.isFinite(saved.cash)&&saved.holdings){cash=saved.cash;symbols.forEach(function(s){if(Number.isFinite(saved.holdings[s]))holdings[s]=saved.holdings[s]})}}catch(e){console.warn('No se pudo restaurar la cartera virtual',e)}
@@ -52,18 +55,50 @@ ctx.strokeStyle='#55e6d1';ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.stroke();
 ctx.lineTo(w-pad,h-pad);ctx.lineTo(pad,h-pad);ctx.closePath();ctx.fillStyle='rgba(85,230,209,.08)';ctx.fill();
 ctx.fillStyle='#8fa2ba';ctx.font='10px system-ui';ctx.fillText(fmt(max),8,12);ctx.fillText(fmt(min),8,h-4)
 }
+function setConnection(label,ok){
+var el=$('connection');if(!el)return;el.textContent=label;el.style.color=ok?'var(--cyan)':'var(--red)';el.style.borderColor=ok?'#55e6d155':'#ff788877';
+}
+function applyTicker(symbol,data){
+if(!latest[symbol])latest[symbol]={};latest[symbol].symbol=symbol;
+latest[symbol].lastPrice=data.c||data.lastPrice||latest[symbol].lastPrice;
+latest[symbol].priceChangePercent=data.P||data.priceChangePercent||latest[symbol].priceChangePercent||'0';
+latest[symbol].highPrice=data.h||data.highPrice||latest[symbol].highPrice;
+latest[symbol].lowPrice=data.l||data.lowPrice||latest[symbol].lowPrice;
+}
+function persistPaper(){try{localStorage.setItem('iaCryptoPaperV1',JSON.stringify({cash:cash,holdings:holdings}))}catch(e){console.warn('No se pudo guardar la cartera virtual',e)}}
+function connectStream(){
+if(socket&&socket.readyState===WebSocket.OPEN)return;
+try{
+socket=new WebSocket('wss://data-stream.binance.vision:443/stream?streams=btcusdt@ticker/ethusdt@ticker/solusdt@ticker');
+socket.onopen=function(){reconnectDelay=2000;setConnection('EN VIVO',true);if(pollTimer){clearInterval(pollTimer);pollTimer=null}};
+socket.onmessage=function(event){try{var packet=JSON.parse(event.data),d=packet.data,s=d.s;if(symbols.indexOf(s)<0)return;applyTicker(s,d);renderCoins();updatePaper();$('updated').textContent='Último tick: '+new Date().toLocaleTimeString('es-MX')}catch(e){console.warn('Mensaje de mercado no válido',e)}};
+socket.onerror=function(){setConnection('RECONECTANDO',false)};
+socket.onclose=function(){setConnection('MODO ALTERNATIVO',false);startPolling();if(!reconnectTimer){reconnectTimer=setTimeout(function(){reconnectTimer=null;reconnectDelay=Math.min(reconnectDelay*2,30000);connectStream()},reconnectDelay)}};
+}catch(e){setConnection('MODO ALTERNATIVO',false);startPolling()}
+}
+function startPolling(){
+if(pollTimer)return;
+pollTimer=setInterval(function(){api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){applyTicker(x.symbol,x)});renderCoins();updatePaper();$('updated').textContent='Consulta periódica: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){setConnection('SIN CONEXIÓN',false);$('updated').textContent='No se pudo actualizar el mercado';console.error(e)})},30000)
+}
 function refreshAll(){
-return Promise.all([api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){latest[x.symbol]=x});renderCoins();$('updated').textContent='Actualizado: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){$('updated').textContent='No se pudo cargar el mercado';console.error(e)}),loadHistory()]).then(updatePaper)
+setConnection('CARGANDO',false);
+return Promise.all([
+api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){applyTicker(x.symbol,x)});renderCoins();$('updated').textContent='Datos consultados: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){$('updated').textContent='No se pudo cargar el mercado';setConnection('SIN CONEXIÓN',false);console.error(e)}),
+loadHistory()
+]).then(function(){updatePaper();connectStream()})
 }
 function updatePaper(){
-var value=cash;symbols.forEach(function(s){value+=holdings[s]*(latest[s]?Number(latest[s].lastPrice):0)});
-$('cash').textContent=fmt(cash);$('equity').textContent=fmt(value)
+var value=cash,lines=[];
+symbols.forEach(function(s){var p=latest[s]?Number(latest[s].lastPrice):0,q=holdings[s];value+=q*p;if(q>0)lines.push(s.replace('USDT','')+': '+number.format(q)+' · valor '+fmt(q*p))});
+$('cash').textContent=fmt(cash);$('equity').textContent=fmt(value);
+var pos=$('positions');if(pos)pos.textContent=lines.length?'Posiciones: '+lines.join(' | '):'Sin posiciones virtuales abiertas.';
+persistPaper()
 }
 function trade(side){
 var symbol=$('paperAsset').value,amount=Number($('paperAmount').value),price=latest[symbol]?Number(latest[symbol].lastPrice):0;
 if(!price||!Number.isFinite(amount)||amount<=0||amount>1000){$('paperMessage').textContent='Introduce una cantidad válida entre 1 y 1,000 USD virtuales y espera a que cargue el precio.';return}
-if(side==='buy'){if(amount>cash){$('paperMessage').textContent='Saldo virtual insuficiente.';return}cash-=amount;holdings[symbol]+=amount/price;$('paperMessage').textContent='Compra simulada registrada: '+number.format(amount/price)+' '+symbol.replace('USDT','')+'.'}
-else{var qty=amount/price;if(qty>holdings[symbol]){ $('paperMessage').textContent='No tienes suficientes unidades virtuales para esa venta.';return}holdings[symbol]-=qty;cash+=amount;$('paperMessage').textContent='Venta simulada registrada: '+number.format(qty)+' '+symbol.replace('USDT','')+'.'}
+if(side==='buy'){if(amount>cash){$('paperMessage').textContent='Saldo virtual insuficiente.';return}var buyQty=(amount*(1-FEE))/price;cash-=amount;holdings[symbol]+=buyQty;$('paperMessage').textContent='Compra virtual: '+number.format(buyQty)+' '+symbol.replace('USDT','')+'. Comisión simulada incluida: 0.10%.'}
+else{var qty=amount/price;if(qty>holdings[symbol]){$('paperMessage').textContent='No tienes suficientes unidades virtuales para vender ese importe.';return}holdings[symbol]-=qty;cash+=amount*(1-FEE);$('paperMessage').textContent='Venta virtual: '+number.format(qty)+' '+symbol.replace('USDT','')+'. Comisión simulada: 0.10%.'}
 updatePaper()
 }
 $('refresh').addEventListener('click',refreshAll);$('asset').addEventListener('change',loadHistory);$('interval').addEventListener('change',loadHistory);$('paperBuy').addEventListener('click',function(){trade('buy')});$('paperSell').addEventListener('click',function(){trade('sell')});
