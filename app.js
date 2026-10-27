@@ -80,6 +80,83 @@ api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(fun
 loadHistory()
 ]).then(function(){connectStream()})
 }
+
+function mlFeatures(c,i){
+  var ret=function(k){return Math.log(c[i]/c[i-k])};
+  var rs=[];for(var j=i-9;j<=i;j++)rs.push(Math.log(c[j]/c[j-1]));
+  var avg=rs.reduce(function(a,b){return a+b},0)/rs.length;
+  var variance=rs.reduce(function(a,b){return a+(b-avg)*(b-avg)},0)/rs.length;
+  var sma=0;for(var m=i-19;m<=i;m++)sma+=c[m];sma/=20;
+  var gains=0,losses=0;
+  for(var r=i-13;r<=i;r++){var d=c[r]-c[r-1];if(d>0)gains+=d;else losses-=d}
+  var rv=losses===0?(gains===0?50:100):100-100/(1+(gains/14)/(losses/14));
+  return [ret(1),ret(3),ret(6),ret(12),c[i]/sma-1,Math.sqrt(variance),rv/100];
+}
+function mlSigmoid(z){if(z>35)return 1;if(z< -35)return 0;return 1/(1+Math.exp(-z))}
+function mlScaler(rows){
+  var means=[],scales=[];
+  for(var j=0;j<rows[0].length;j++){
+    var vals=rows.map(function(x){return x[j]});
+    var m=vals.reduce(function(a,b){return a+b},0)/vals.length;
+    var v=vals.reduce(function(a,b){return a+(b-m)*(b-m)},0)/vals.length;
+    means.push(m);scales.push(Math.sqrt(v)||1);
+  }
+  return {apply:function(x){return x.map(function(v,j){return (v-means[j])/scales[j]})}};
+}
+function mlTrain(rows,labels){
+  var scaler=mlScaler(rows),weights=new Array(rows[0].length+1).fill(0);
+  for(var epoch=0;epoch<900;epoch++){
+    var grad=new Array(weights.length).fill(0);
+    rows.forEach(function(raw,k){
+      var x=scaler.apply(raw),z=weights[0];
+      for(var j=0;j<x.length;j++)z+=weights[j+1]*x[j];
+      var e=mlSigmoid(z)-labels[k];grad[0]+=e;
+      for(var q=0;q<x.length;q++)grad[q+1]+=e*x[q];
+    });
+    for(var w=0;w<weights.length;w++)weights[w]-=.12*(grad[w]/rows.length+(w===0?0:.001*weights[w]));
+  }
+  return {predict:function(raw){
+    var x=scaler.apply(raw),z=weights[0];
+    for(var j=0;j<x.length;j++)z+=weights[j+1]*x[j];
+    return mlSigmoid(z);
+  }};
+}
+function mlAccuracy(model,rows,labels){
+  var correct=0;rows.forEach(function(x,i){if((model.predict(x)>=.5?1:0)===labels[i])correct++});
+  return rows.length?correct/rows.length:0;
+}
+function trainEducationalModel(){
+  var button=$('trainModel'),status=$('mlStatus');
+  if(!button||button.disabled)return;
+  button.disabled=true;status.textContent='Descargando historial público y preparando el experimento…';
+  var symbol=$('asset').value,interval=$('interval').value;
+  api('klines?symbol='+symbol+'&interval='+interval+'&limit=1000').then(function(raw){
+    var candles=raw.map(function(x){return Number(x[4])}).filter(function(x){return Number.isFinite(x)&&x>0});
+    if(candles.length<180)throw new Error('El historial disponible es demasiado corto.');
+    var rows=[],labels=[];
+    for(var i=20;i<candles.length-1;i++){rows.push(mlFeatures(candles,i));labels.push(candles[i+1]>candles[i]?1:0)}
+    var trainEnd=Math.floor(rows.length*.70),valEnd=Math.floor(rows.length*.85);
+    var trainX=rows.slice(0,trainEnd),trainY=labels.slice(0,trainEnd);
+    var valX=rows.slice(trainEnd,valEnd),valY=labels.slice(trainEnd,valEnd);
+    var testX=rows.slice(valEnd),testY=labels.slice(valEnd);
+    if(trainX.length<80||valX.length<10||testX.length<10)throw new Error('No hay suficientes muestras para separar los conjuntos.');
+    var model=mlTrain(trainX,trainY),testAcc=mlAccuracy(model,testX,testY),valAcc=mlAccuracy(model,valX,valY);
+    var positive=trainY.reduce(function(a,b){return a+b},0);
+    var majority=positive>=trainY.length/2?1:0;
+    var baseline=testY.filter(function(y){return y===majority}).length/testY.length;
+    var estimate=model.predict(mlFeatures(candles,candles.length-2));
+    $('mlSamples').textContent=String(testX.length);
+    $('mlAccuracy').textContent=(testAcc*100).toFixed(1)+'%';
+    $('mlBaseline').textContent=(baseline*100).toFixed(1)+'%';
+    $('mlEstimate').textContent=(estimate*100).toFixed(1)+'% arriba';
+    status.textContent='Terminado · '+symbol+' · '+interval+' · entrenamiento '+trainX.length+' · validación '+valX.length+' ('+(valAcc*100).toFixed(1)+'%) · prueba cronológica '+testX.length+'. Estimación de la última vela cerrada; no es una recomendación.';
+  }).catch(function(error){
+    ['mlSamples','mlAccuracy','mlBaseline','mlEstimate'].forEach(function(id){$(id).textContent='—'});
+    status.textContent='No se pudo completar el experimento: '+error.message;
+  }).finally(function(){button.disabled=false});
+}
+
+$('trainModel').addEventListener('click',trainEducationalModel);
 $('refresh').addEventListener('click',refreshAll);$('asset').addEventListener('change',loadHistory);$('interval').addEventListener('change',loadHistory);
 window.addEventListener('resize',drawChart);window.addEventListener('online',function(){refreshAll()});refreshAll();
 })();
