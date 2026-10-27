@@ -5,7 +5,7 @@ var latest={};
 var history=[];
 var currency=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2});
 var number=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
-var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null;
+var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null,historyTimer=null,historyRequest=0;
 var $=function(id){return document.getElementById(id)};
 function fmt(v){return currency.format(Number(v)||0)}
 function api(path){
@@ -22,9 +22,11 @@ box.appendChild(el)})
 function mean(a){return a.reduce(function(x,y){return x+y},0)/a.length}
 function rsi(values){if(values.length<15)return null;var gain=0,loss=0;for(var i=1;i<=14;i++){var d=values[i]-values[i-1];if(d>0)gain+=d;else loss-=d}var avgGain=gain/14,avgLoss=loss/14;for(var j=15;j<values.length;j++){var delta=values[j]-values[j-1];avgGain=(avgGain*13+Math.max(delta,0))/14;avgLoss=(avgLoss*13+Math.max(-delta,0))/14}if(avgLoss===0)return avgGain===0?50:100;var rs=avgGain/avgLoss;return 100-(100/(1+rs))}
 function loadHistory(){
-var symbol=$('asset').value,interval=$('interval').value;
+var symbol=$('asset').value,interval=$('interval').value,requestId=++historyRequest;
 $('refresh').disabled=true;$('signal').textContent='CARGANDO';$('signalText').textContent='Consultando historial público…';
 return api('klines?symbol='+symbol+'&interval='+interval+'&limit=90').then(function(rows){
+if(requestId!==historyRequest)return;
+if(!Array.isArray(rows)||!rows.length)throw new Error('Binance no devolvió velas para este activo e intervalo.');
 history=rows.map(function(x){return {time:x[0],close:Number(x[4])}}).filter(function(x){return Number.isFinite(x.close)});
 var closes=history.map(function(x){return x.close});var last=closes[closes.length-1];var first=closes[0];var avg=mean(closes.slice(-20));var rv=rsi(closes);var change=((last-first)/first)*100;
 $('mPrice').textContent=fmt(latest[symbol]?latest[symbol].lastPrice:last);$('mRsi').textContent=rv===null?'—':rv.toFixed(1);$('mSma').textContent=fmt(avg);$('mChange').textContent=(change>=0?'+':'')+change.toFixed(2)+'%';
@@ -34,7 +36,7 @@ else if(rv!==null&&rv>70){state='RSI ALTO';desc='El RSI está por encima de 70 e
 var relation=last>=avg?'El último cierre está por encima de la SMA 20.':'El último cierre está por debajo de la SMA 20.';
 $('signal').textContent=state;$('signal').className='signal neutral';$('signalText').textContent=desc+' '+relation+' Es una descripción histórica, no una predicción.';
 drawChart();
-}).catch(function(e){$('signal').textContent='SIN DATOS';$('signal').className='signal neutral';$('signalText').textContent='No se pudo consultar el historial. Comprueba la conexión e inténtalo después.';console.error(e)}).finally(function(){$('refresh').disabled=false})
+}).catch(function(e){if(requestId!==historyRequest)return;$('signal').textContent='SIN DATOS';$('signal').className='signal neutral';$('signalText').textContent='No se pudo consultar el historial. Comprueba la conexión e inténtalo después. Se conservaron los últimos datos válidos.';console.error(e)}).finally(function(){if(requestId===historyRequest)$('refresh').disabled=false})
 }
 function drawChart(){
 var canvas=$('chart'),rect=canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;
@@ -158,5 +160,9 @@ function trainEducationalModel(){
 
 $('trainModel').addEventListener('click',trainEducationalModel);
 $('refresh').addEventListener('click',refreshAll);$('asset').addEventListener('change',loadHistory);$('interval').addEventListener('change',loadHistory);
-window.addEventListener('resize',drawChart);window.addEventListener('online',function(){refreshAll()});refreshAll();
+window.addEventListener('resize',drawChart);window.addEventListener('online',function(){refreshAll()});
+// Refresca historial, gráfico e indicadores cada 60 segundos, independientemente del WebSocket de precios.
+if(historyTimer)clearInterval(historyTimer);
+historyTimer=setInterval(function(){if(document.visibilityState==='visible')loadHistory()},60000);
+refreshAll();
 })();
