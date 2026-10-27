@@ -16,7 +16,7 @@ Un panel ligero para estudiar datos históricos y cotizaciones públicas. Solo l
 - Actualizaciones de precio mediante WebSocket público, con consulta REST alternativa.
 - Historial configurable de 1 día, 4 horas y 1 hora.
 - Gráfico de cierres, RSI(14) de Wilder, SMA(20) y variación del periodo.
-- Explicaciones de indicadores sin señales de compra/venta ni promesas predictivas.
+- Laboratorio opcional de regresión logística ejecutado en el navegador, con separación cronológica de entrenamiento, validación y prueba; no produce recomendaciones financieras.
 - Diseño adaptable a móvil y escritorio, sin claves API ni dependencias de compilación.
 
 ## Sitio
@@ -30,7 +30,7 @@ GitHub Pages publica desde `main` y la carpeta raíz.
 - REST: `https://data-api.binance.vision/api/v3`.
 - WebSocket público: `wss://data-stream.binance.vision`.
 - Disponibilidad, latencia y límites dependen del proveedor y de la red.
-- Los indicadores describen datos históricos. No predicen precios ni garantizan resultados.
+- Los indicadores describen datos históricos. El modelo experimental estudia la dirección del siguiente cierre con una prueba cronológica separada; no garantiza resultados ni constituye una recomendación financiera.
 - El panel es de solo lectura: no hay conexión con wallets, cuentas ni ejecución de operaciones.
 - No existe un modelo de aprendizaje automático ni una precisión predictiva validada en esta versión.
 
