@@ -5,7 +5,7 @@ var latest={};
 var history=[];
 var currency=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2});
 var number=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
-var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null,historyTimer=null,historyRequest=0;
+var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null,historyTimer=null,historyRequest=0;\nvar candleSocket=null,candleReconnectTimer=null,candleGeneration=0,candleRetry=2000;
 var $=function(id){return document.getElementById(id)};
 function fmt(v){return currency.format(Number(v)||0)}
 function api(path){
@@ -71,7 +71,33 @@ ctx.beginPath();ctx.moveTo(x,y(candle.high));ctx.lineTo(x,y(candle.low));ctx.str
 var bodyTop=y(Math.max(candle.open,candle.close)),bodyBottom=y(Math.min(candle.open,candle.close));
 ctx.fillStyle=color;ctx.fillRect(x-bodyW/2,bodyTop,bodyW,Math.max(1.5,bodyBottom-bodyTop));
 });
-ctx.fillStyle='#8fa2ba';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(fmt(max),left,11);ctx.textAlign='right';ctx.fillText(fmt(min),w-right,h-3);
+var last=history[history.length-1],liveY=y(last.close);ctx.save();ctx.setLineDash([4,4]);ctx.strokeStyle='rgba(85,230,209,.72)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,liveY);ctx.lineTo(w-right,liveY);ctx.stroke();ctx.restore();ctx.strokeStyle='#55e6d1';ctx.lineWidth=1.5;ctx.strokeRect(left+step*(history.length-.5)-bodyW/2-1,y(Math.max(last.open,last.close))-1,bodyW+2,Math.max(3,Math.abs(y(last.open)-y(last.close))+2));\nctx.fillStyle='#8fa2ba';ctx.font='10px system-ui';ctx.textAlign='left';ctx.fillText(fmt(max),left,11);ctx.textAlign='right';ctx.fillText(fmt(min),w-right,h-3);
+}
+function connectCandleStream(){
+var generation=++candleGeneration;
+if(candleReconnectTimer){clearTimeout(candleReconnectTimer);candleReconnectTimer=null}
+if(candleSocket){try{candleSocket.onclose=null;candleSocket.close()}catch(e){}candleSocket=null}
+var symbol=$('asset').value.toLowerCase(),interval=$('interval').value;
+var url='wss://data-stream.binance.vision:443/ws/'+symbol+'@kline_'+interval;
+try{
+candleSocket=new WebSocket(url);
+candleSocket.onopen=function(){if(generation!==candleGeneration)return;candleRetry=2000;$('signalText').textContent='Vela sincronizada con el flujo público en tiempo real. '+$('signalText').textContent};
+candleSocket.onmessage=function(event){
+if(generation!==candleGeneration)return;
+try{
+var packet=JSON.parse(event.data),k=packet.k;
+if(!k||k.s!==$('asset').value)return;
+var candle={time:Number(k.t),open:Number(k.o),high:Number(k.h),low:Number(k.l),close:Number(k.c)};
+if(![candle.time,candle.open,candle.high,candle.low,candle.close].every(Number.isFinite))return;
+var last=history[history.length-1];
+if(!last||last.time!==candle.time){history.push(candle);if(history.length>90)history.shift()}else{history[history.length-1]=candle}
+renderTechnicalMetrics($('asset').value);drawChart();
+$('updated').textContent='Vela en vivo · '+new Date().toLocaleTimeString('es-MX');
+}catch(e){console.warn('Kline en vivo no válido',e)}
+};
+candleSocket.onerror=function(){if(generation===candleGeneration)$('signalText').textContent='Flujo de velas temporalmente interrumpido; intentando reconectar.'};
+candleSocket.onclose=function(){if(generation!==candleGeneration)return;candleReconnectTimer=setTimeout(function(){if(generation===candleGeneration){candleRetry=Math.min(candleRetry*2,30000);connectCandleStream()}},candleRetry)};
+}catch(e){$('signalText').textContent='No se pudo abrir el flujo de velas en vivo.'}
 }
 function setConnection(label,ok){
 var el=$('connection');if(!el)return;el.textContent=label;el.style.color=ok?'var(--cyan)':'var(--red)';el.style.borderColor=ok?'#55e6d155':'#ff788877';
@@ -102,7 +128,7 @@ setConnection('CARGANDO',false);
 return Promise.all([
 api('ticker/24hr?symbols='+encodeURIComponent(JSON.stringify(symbols))).then(function(rows){rows.forEach(function(x){applyTicker(x.symbol,x)});renderCoins();$('updated').textContent='Datos consultados: '+new Date().toLocaleTimeString('es-MX')}).catch(function(e){$('updated').textContent='No se pudo cargar el mercado';setConnection('SIN CONEXIÓN',false);console.error(e)}),
 loadHistory()
-]).then(function(){connectStream()})
+]).then(function(){connectStream();connectCandleStream()})
 }
 
 function mlFeatures(c,i){
@@ -181,7 +207,7 @@ function trainEducationalModel(){
 }
 
 $('trainModel').addEventListener('click',trainEducationalModel);
-$('refresh').addEventListener('click',refreshAll);$('asset').addEventListener('change',loadHistory);$('interval').addEventListener('change',loadHistory);
+$('refresh').addEventListener('click',refreshAll);function reloadSelectedHistory(){loadHistory().then(connectCandleStream)}$('asset').addEventListener('change',reloadSelectedHistory);$('interval').addEventListener('change',reloadSelectedHistory);
 window.addEventListener('resize',drawChart);window.addEventListener('online',function(){refreshAll()});
 // Refresca historial, gráfico e indicadores cada 60 segundos, independientemente del WebSocket de precios.
 if(historyTimer)clearInterval(historyTimer);
