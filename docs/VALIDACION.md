@@ -21,7 +21,13 @@ La API pública puede limitar solicitudes, cambiar disponibilidad o no responder
 
 Estos indicadores resumen el pasado. No son probabilidades ni predicciones, y la interfaz no emite señales de compra o venta.
 
-## Antes de investigar un modelo predictivo
+## Experimento didáctico incluido
+
+La página incluye un clasificador de regresión logística ejecutado localmente en el navegador. Usa hasta 1.000 velas públicas y variables derivadas de retornos pasados, volatilidad, distancia a SMA(20) y RSI. Las muestras se dividen en orden temporal: 70% entrenamiento, 15% validación y 15% prueba. El escalado se ajusta solo con el tramo de entrenamiento. Se compara la exactitud del tramo de prueba con una referencia mayoritaria calculada desde entrenamiento. La estimación de la última vela cerrada es experimental y no es una recomendación para operar.
+
+Este diseño es una primera práctica reproducible, no una validación profesional: no incluye costes, deslizamiento, cambios de régimen ni una evaluación en múltiples periodos. La exactitud no debe interpretarse como probabilidad de ganar dinero.
+
+## Antes de ampliar el modelo predictivo
 
 No se debe afirmar una precisión del 65–75% sin una evaluación reproducible. Un experimento académico futuro tendría que:
 
