@@ -4,39 +4,42 @@
 
 # IA-CRYPTO
 
-**Datos públicos · Indicadores · Simulación**
+**Datos públicos · Indicadores · Simulación educativa**
 
-Un laboratorio ligero para aprender a leer el mercado cripto sin arriesgar dinero real.
+Un laboratorio ligero para estudiar datos de mercado sin conectar cuentas ni arriesgar dinero real.
 
 </div>
 
-## Qué incluye
+## Incluye
 
-- Panel de cotizaciones BTC, ETH y SOL desde Binance Public Market Data.
-- Historial configurable (1 día, 4 horas y 1 hora).
-- Gráfico de cierres, RSI (14), SMA (20) y variación del periodo.
-- Lectura educativa de indicadores, sin promesas de predicción.
-- Simulador de cartera con saldo ficticio de 10,000 USD.
-- Diseño adaptable a móvil y escritorio, sin dependencias ni claves API.
+- Cotizaciones BTC, ETH y SOL desde la API pública de Binance.
+- Actualizaciones de precio mediante WebSocket público, con consulta REST alternativa.
+- Historial configurable de 1 día, 4 horas y 1 hora.
+- Gráfico de cierres, RSI(14) de Wilder, SMA(20) y variación del periodo.
+- Cartera virtual de 10,000 USD con comisión simulada y guardado local.
+- Diseño adaptable a móvil y escritorio, sin claves API ni dependencias de compilación.
 
-## Publicación
+## Sitio
 
-La web se publica con GitHub Pages desde `main` y la carpeta raíz. Tras cada cambio en `index.html`, GitHub Pages vuelve a desplegar el sitio automáticamente.
+https://ppequepro-cmyk.github.io/IA-CRYPTO/
 
-Sitio: https://ppequepro-cmyk.github.io/IA-CRYPTO/
+GitHub Pages publica desde `main` y la carpeta raíz. Cada cambio en los archivos del sitio inicia un nuevo despliegue.
 
 ## Datos y limitaciones
 
-- Los datos de mercado se consultan desde la API pública de Binance; disponibilidad, límites y acceso pueden variar.
-- Si la API no responde, el panel mostrará que no hay datos. No se inventan cotizaciones.
-- Los indicadores describen datos históricos y no predicen el precio futuro.
-- El simulador solo modifica valores locales en el navegador. No conecta wallets, cuentas ni ejecuta órdenes.
-- No hay modelo de aprendizaje automático ni precisión predictiva validada todavía.
+- REST: `https://data-api.binance.vision/api/v3`.
+- WebSocket público: `wss://data-stream.binance.vision`.
+- La disponibilidad, latencia y límites dependen del proveedor y de la red.
+- Los indicadores describen datos históricos. No predicen precios ni garantizan resultados.
+- La simulación es local al navegador, usa saldo ficticio y no ejecuta órdenes.
+- No existe un modelo de aprendizaje automático ni una precisión predictiva validada en esta versión.
 
-## Desarrollo siguiente
+## Validación
 
-Antes de evaluar cualquier modelo predictivo habrá que definir datos históricos, separar entrenamiento y prueba por tiempo, incluir comisiones y deslizamiento en el backtest y comparar resultados contra una estrategia base. Ningún porcentaje de acierto se publicará sin validación reproducible.
+Consulta [docs/VALIDACION.md](docs/VALIDACION.md) para conocer las fórmulas, el alcance del simulador y los requisitos antes de evaluar un modelo predictivo.
 
-## Alcance
+GitHub Actions comprueba la sintaxis de JavaScript y la presencia de los archivos principales en cada cambio a `main`.
 
-Proyecto educativo y experimental, no asesoría financiera. No usar dinero real ni compartir claves privadas o frases semilla.
+## Seguridad
+
+No se solicitan ni almacenan claves privadas, frases semilla, credenciales o permisos de cuentas. Proyecto educativo, no asesoría financiera.
