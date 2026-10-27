@@ -24,3 +24,5 @@ jobs:
           test -s app.js
           grep -q 'app.js' index.html
           grep -q 'data-api.binance.vision' app.js
+          grep -q 'trainEducationalModel' app.js
+          grep -q 'id="modelo"' index.html
