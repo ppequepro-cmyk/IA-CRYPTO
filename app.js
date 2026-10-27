@@ -6,9 +6,6 @@ var history=[];
 var currency=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2});
 var number=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
 var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null;
-var socket=null, reconnectDelay=2000, pollTimer=null, reconnectTimer=null;
-var FEE=0.001;
-try{var saved=JSON.parse(localStorage.getItem('iaCryptoPaperV1')||'null');if(saved&&Number.isFinite(saved.cash)&&saved.holdings){cash=saved.cash;symbols.forEach(function(s){if(Number.isFinite(saved.holdings[s]))holdings[s]=saved.holdings[s]})}}catch(e){console.warn('No se pudo restaurar la cartera virtual',e)}
 var $=function(id){return document.getElementById(id)};
 function fmt(v){return currency.format(Number(v)||0)}
 function api(path){
