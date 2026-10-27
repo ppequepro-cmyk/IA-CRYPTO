@@ -5,7 +5,8 @@ var latest={};
 var history=[];
 var currency=new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:2});
 var number=new Intl.NumberFormat('en-US',{maximumFractionDigits:6});
-var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null,historyTimer=null,historyRequest=0;\nvar candleSocket=null,candleReconnectTimer=null,candleGeneration=0,candleRetry=2000;
+var socket=null,reconnectDelay=2000,pollTimer=null,reconnectTimer=null,historyTimer=null,historyRequest=0;
+var candleSocket=null,candleReconnectTimer=null,candleGeneration=0,candleRetry=2000;
 var $=function(id){return document.getElementById(id)};
 function fmt(v){return currency.format(Number(v)||0)}
 function api(path){
